@@ -351,70 +351,73 @@ document.getElementById('opportunityModal').addEventListener('click', function(e
             // parse skills
             const skills = skillsRaw.split(',').map(s => s.trim()).filter(Boolean);
 
-            // create opportunity card element
-            const card = document.createElement('div');
-            card.className = 'opportunity-card';
-
-            // header and meta
-            const headerHtml = `
-                <div class="opportunity-card-header">
-                    <h5>${escapeHtml(name)}</h5>
-                    <div class="opportunity-meta">
-                        <span><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>${escapeHtml(duration)}</span>
-                        <span><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>${escapeHtml(startDate)}</span>
-                    </div>
-                </div>
-                <p class="opportunity-description">${escapeHtml(description)}</p>
-            `;
-
-            // skills tags
-            const skillsHtml = `<div class="opportunity-skills"><div class="opportunity-skills-label">Skills You'll Gain</div><div class="skills-tags">
-                ${skills.map(s => `<span class="skill-tag">${escapeHtml(s)}</span>`).join('')}
-            </div></div>`;
-
-            // footer
-            const applicantsCount = maxApplicants ? `${parseInt(maxApplicants,10)} applicants` : '0 applicants';
-            const footerHtml = `
-                <div class="opportunity-footer">
-                    <span class="applicants-count">${escapeHtml(applicantsCount)}</span>
-                    <button class="view-course-btn" style="width: auto; padding: 8px 16px;">View Details</button>
-                </div>
-            `;
-
-            card.innerHTML = headerHtml + skillsHtml + footerHtml;
-
-            // wire up the View Details button to open details modal
-            const viewBtn = card.querySelector('.view-course-btn');
-            viewBtn.addEventListener('click', function() {
-                openOpportunityDetails(name, {
-                    duration: duration,
-                    startDate: startDate,
-                    description: description,
-                    skills: skills,
-                    applicants: maxApplicants ? parseInt(maxApplicants,10) : 0,
-                    futureOpportunities: futureOpportunities,
-                    prerequisites: ''
+            
+           
+                fetch("http://127.0.0.1:5000/opportunity/", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    credentials: "include", 
+                    body: JSON.stringify({
+                        name: name,
+                        duration: duration,
+                        start_date: startDate,
+                        description: description,
+                        skills: skills.join(','),
+                        category: category,
+                        future_opportunities: futureOpportunities,
+                        max_applicants: maxApplicants || null
+                    })
+                })
+                .then(res => {
+                    return res.json().then(data => ({ status: res.status, body: data }));
+                })
+                .then(({ status, body }) => {
+                    if (status === 201) {
+                        showToast("Opportunity created successfully!");
+                        closeOpportunityModal();
+                        this.reset();
+                        loadOpportunities();
+                    } else {
+                        showToast(body.error || "Error creating opportunity");
+                    }
+                })
+                .catch(() => showToast("Server error"));
+                
+            
                 });
-            });
-
-            // append to grid
-            const grid = document.querySelector('.opportunities-grid');
-            if (grid) grid.appendChild(card);
-
-            showToast('Opportunity created successfully!');
-            closeOpportunityModal();
-            this.reset();
-        });
-
-        // small helper to avoid HTML injection when inserting text
-        function escapeHtml(str) {
-            return String(str)
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
-        }
+            
+                async function loadOpportunities() {
+                    const res = await fetch("http://127.0.0.1:5000/opportunity/", {
+                        credentials: "include"   // 🔥 IMPORTANT
+                    });
+                
+                    const data = await res.json();
+                
+                    const grid = document.querySelector('.opportunities-grid');
+                    grid.innerHTML = "";
+                
+                    if (data.length === 0) {
+                        grid.innerHTML = "<p>No opportunities yet</p>";
+                        return;
+                    }
+                
+                    data.forEach(o => {
+                        const card = document.createElement('div');
+                        card.className = 'opportunity-card';
+                
+                        card.innerHTML = `
+                            <h5>${o.name}</h5>
+                            <p>${o.description}</p>
+                            <span>${o.category}</span>
+                        `;
+                
+                        grid.appendChild(card);
+                    });
+                }
+                
+           
 
 // ===== QUICK ADD STUDENT MODAL =====
 function openQuickAddModal() {
@@ -647,9 +650,37 @@ document.getElementById('loginForm').addEventListener('submit', function(e) {
 
     if (!valid) { shakeForm('loginForm'); return; }
 
-    showToast('Login successful! Redirecting...');
-    setTimeout(() => showDashboard(email), 1200);
-    generateCaptcha('login');
+    fetch("http://127.0.0.1:5000/auth/login", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        credentials: "include",
+        body: JSON.stringify({
+            email: email,
+            password: password,
+            remember: true
+        })
+    })
+    .then(res => {
+        return res.json().then(data => ({ status: res.status, body: data }));
+    })
+    .then(({ status, body }) => {
+        if (status === 200) {
+            showToast('Login successful! Redirecting...');
+            setTimeout(() => {
+                showDashboard(email);
+                loadOpportunities();   
+            }, 1200);
+            generateCaptcha('login');
+        } else {
+            showError('loginPasswordErr', body.error);
+            shakeForm('loginForm');
+        }
+    })
+    .catch(() => showToast("Server error"));
+
+    
 });
 
 // ===== SIGNUP =====
@@ -671,10 +702,33 @@ document.getElementById('signupForm').addEventListener('submit', function(e) {
     else if (captchaInput !== captchas.signup) { showError('signupCaptchaErr','Captcha does not match.'); valid = false; generateCaptcha('signup'); }
 
     if (!valid) { shakeForm('signupForm'); return; }
-    showToast('Account created successfully!');
-    generateCaptcha('signup');
-    this.reset(); checkStrength('');
-    setTimeout(() => showPage('loginPage'), 1500);
+    fetch("http://127.0.0.1:5000/auth/signup", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            full_name: name,
+            email: email,
+            password: password
+        })
+    })
+    .then(res => {
+        return res.json().then(data => ({ status: res.status, body: data }));
+    })
+    .then(({ status, body }) => {
+        if (status === 201) {
+            showToast('Account created successfully!');
+            generateCaptcha('signup');
+            this.reset();
+            checkStrength('');
+            setTimeout(() => showPage('loginPage'), 1500);
+        } else {
+            showError('signupEmailErr', body.error);
+            shakeForm('signupForm');
+        }
+    })
+    .catch(() => showToast("Server error"));
 });
 
 // ===== FORGOT =====
