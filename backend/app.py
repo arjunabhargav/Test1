@@ -19,7 +19,7 @@ bcrypt.init_app(app)
 
 login_manager.login_view = "auth.login"
 
-# 🔥 ADD THIS HERE (IMPORTANT)
+
 from models import Admin
 
 @login_manager.user_loader
